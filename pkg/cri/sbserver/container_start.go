@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/containerd/containerd"
@@ -189,6 +191,8 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 
 	containerStartTimer.WithValues(info.Runtime.Name).UpdateSince(start)
 
+	c.generateAndSendEventToFission(id, sandboxID)
+
 	return &runtime.StartContainerResponse{}, nil
 }
 
@@ -257,3 +261,39 @@ func (c *criService) createContainerLoggers(logPath string, tty bool) (stdout io
 	}
 	return
 }
+
+func (c *criService) generateAndSendEventToFission(containerID, sandboxID string) {
+	sandbox, err := c.sandboxStore.Get(sandboxID)
+	if err != nil {
+		fmt.Println("[---youtirsin---] failed to find sandbox id ", sandboxID, err)
+		return
+	}
+	fmt.Printf("[---youtirsin---] sandbox id: %v, ip: %v\n", sandboxID, sandbox.IP)
+
+	fissionUrl, hasUrl := sandbox.Config.Annotations["fission-url"]
+  if !hasUrl {
+		fmt.Println("[---youtirsin---] fission url not exist")
+    return
+  }
+	fmt.Println("[---youtirsin---] sending ip to url: ", fissionUrl)
+
+  req, err := http.NewRequest("POST", fissionUrl, strings.NewReader(sandbox.IP))
+  if err != nil {
+		fmt.Println("[---youtirsin---] failed to create request")
+    return
+  }
+  req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+  client := &http.Client{}
+  resp, err := client.Do(req)
+  if err != nil {
+		fmt.Println("[---youtirsin---] failed to send request")
+    return
+  }
+  defer resp.Body.Close()
+
+  if resp.StatusCode != http.StatusOK {
+		fmt.Println("[---youtirsin---] response status not ok")
+  }
+}
+
