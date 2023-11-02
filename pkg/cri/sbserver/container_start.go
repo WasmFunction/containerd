@@ -191,7 +191,7 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 
 	containerStartTimer.WithValues(info.Runtime.Name).UpdateSince(start)
 
-	c.generateAndSendEventToFission(id, sandboxID)
+	c.generateAndSendEventToFission(ctx, id, sandboxID)
 
 	return &runtime.StartContainerResponse{}, nil
 }
@@ -262,38 +262,37 @@ func (c *criService) createContainerLoggers(logPath string, tty bool) (stdout io
 	return
 }
 
-func (c *criService) generateAndSendEventToFission(containerID, sandboxID string) {
+func (c *criService) generateAndSendEventToFission(ctx context.Context, containerID, sandboxID string) {
 	sandbox, err := c.sandboxStore.Get(sandboxID)
 	if err != nil {
-		fmt.Println("[---youtirsin---] failed to find sandbox id ", sandboxID, err)
+		log.G(ctx).WithError(err).Errorln("failed to find sandbox id ", sandboxID, err)
 		return
 	}
-	fmt.Printf("[---youtirsin---] sandbox id: %v, ip: %v\n", sandboxID, sandbox.IP)
+	log.G(ctx).Infof("sandbox id: %v, ip: %v\n", sandboxID, sandbox.IP)
 
 	fissionUrl, hasUrl := sandbox.Config.Annotations["fission-url"]
-  if !hasUrl {
-		fmt.Println("[---youtirsin---] fission url not exist")
-    return
-  }
-	fmt.Println("[---youtirsin---] sending ip to url: ", fissionUrl)
+	if !hasUrl {
+		log.G(ctx).Infoln("fission url not exist")
+		return
+	}
+	log.G(ctx).Infoln("sending ip to url: ", fissionUrl)
 
-  req, err := http.NewRequest("POST", fissionUrl, strings.NewReader(sandbox.IP))
-  if err != nil {
-		fmt.Println("[---youtirsin---] failed to create request")
-    return
-  }
-  req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req, err := http.NewRequest("POST", fissionUrl, strings.NewReader(sandbox.IP))
+	if err != nil {
+		log.G(ctx).WithError(err).Errorln("failed to create request")
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-  client := &http.Client{}
-  resp, err := client.Do(req)
-  if err != nil {
-		fmt.Println("[---youtirsin---] failed to send request")
-    return
-  }
-  defer resp.Body.Close()
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.G(ctx).WithError(err).Errorln("failed to send request")
+		return
+	}
+	defer resp.Body.Close()
 
-  if resp.StatusCode != http.StatusOK {
-		fmt.Println("[---youtirsin---] response status not ok")
-  }
+	if resp.StatusCode != http.StatusOK {
+		log.G(ctx).WithError(err).Errorln("response status not ok")
+	}
 }
-
